@@ -1,0 +1,53 @@
+# Example ContainerLab topology with Nokia SROS and dynamic resource specifications
+name: sros-demo
+
+topology:
+  kinds:
+    nokia_sros:
+      image: ghcr.io/nokia/sros
+    linux:
+      image: ghcr.io/hellt/network-multitool
+
+  nodes:
+    # SROS router with CPM and line cards specified
+    router1:
+      kind: nokia_sros
+      type: 7750-sr
+      sros:
+        cpm:
+          count: 2  # Dual CPM for redundancy
+        linecard:
+          count: 4  # 4 line cards
+        mda:
+          count: 8  # 8 Media Dependent Adapters
+
+    # SROS router with custom resource specification
+    router2:
+      kind: nokia_sros
+      type: 7250-ixr
+      resources:
+        cpu: 8
+        memory: 16
+
+    # SROS router with direct component specification
+    router3:
+      kind: nokia_sros
+      type: 7210-sas
+      cpm: 1
+      linecard: 2
+      mda: 4
+
+    # Linux client with custom resources
+    client1:
+      kind: linux
+      resources: "2cpu,4gb"  # String format
+
+    # Linux client with standard resources
+    client2:
+      kind: linux
+
+  links:
+    - endpoints: ["router1:port1", "router2:port1"]
+    - endpoints: ["router2:port2", "router3:port1"]
+    - endpoints: ["client1:eth1", "router1:port2"]
+    - endpoints: ["client2:eth1", "router3:port2"]

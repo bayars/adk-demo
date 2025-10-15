@@ -1,0 +1,66 @@
+# Example ContainerLab topology with mixed vendor equipment and custom resources
+name: mixed-vendor-demo
+
+topology:
+  kinds:
+    nokia_sros:
+      image: ghcr.io/nokia/sros
+    cisco_iosxe:
+      image: ghcr.io/cisco/iosxe
+    juniper_vmx:
+      image: ghcr.io/juniper/vmx
+    linux:
+      image: ghcr.io/hellt/network-multitool
+
+  nodes:
+    # Nokia SROS with lifecycle components
+    nokia_pe1:
+      kind: nokia_sros
+      type: 7750-sr
+      components:
+        cpm:
+          count: 2
+          type: cpm
+        linecard:
+          count: 6
+          type: linecard
+        mda:
+          count: 12
+          type: mda
+
+    # Cisco router with custom resources
+    cisco_pe2:
+      kind: cisco_iosxe
+      type: asr1000
+      resources:
+        cpu: 6
+        memory: 12
+
+    # Juniper router with string resource format
+    juniper_p:
+      kind: juniper_vmx
+      type: mx240
+      resources: "4cpu,8gb"
+
+    # Linux servers with different resource specs
+    server1:
+      kind: linux
+      resources:
+        cpu: 2
+        memory: 4
+
+    server2:
+      kind: linux
+      resources: "1cpu,2gb"
+
+    # Standard Linux node (uses default mapping)
+    server3:
+      kind: linux
+
+  links:
+    - endpoints: ["nokia_pe1:port1", "cisco_pe2:port1"]
+    - endpoints: ["cisco_pe2:port2", "juniper_p:port1"]
+    - endpoints: ["juniper_p:port2", "nokia_pe1:port2"]
+    - endpoints: ["server1:eth1", "nokia_pe1:port3"]
+    - endpoints: ["server2:eth1", "cisco_pe2:port3"]
+    - endpoints: ["server3:eth1", "juniper_p:port3"]

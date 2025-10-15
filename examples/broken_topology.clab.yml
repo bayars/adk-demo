@@ -1,0 +1,19 @@
+# Broken ContainerLab topology file for testing repair functionality
+name: broken-topology
+
+# Missing topology section - this should be repaired
+nodes:
+  router1:
+    # Missing kind field - should be repaired
+    type: ixrd3
+    # Missing image field - should be repaired
+  router2:
+    kind: nokia_sros
+    # Missing type field - should be repaired
+    sros:
+      cpm:
+        count: 2
+      linecard:
+        count: 4
+
+# Missing links section - should be repaired
