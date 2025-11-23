@@ -6,13 +6,24 @@ Coordinates between Topology Repair Agent and Resource Optimization Agent
 
 from typing import Dict, List, Optional, Any
 import json
+import os
 
 # Google ADK imports
 from google.adk.agents import Agent
+from google.adk.llms import LiteLlm
 
-# Import the specialized agents
-from .topology_repair_agent import topology_repair_agent
-from .resource_optimization_agent import resource_optimization_agent
+# Import tool functions directly from specialized agents
+from .topology_repair_agent import (
+    validate_topology,
+    repair_topology_file,
+    analyze_topology_structure
+)
+from .resource_optimization_agent import (
+    analyze_topology_resources,
+    optimize_deployment_configuration,
+    get_gcp_pricing_information,
+    compare_deployment_options
+)
 
 
 # ADK Tools for Main Coordinator Agent
@@ -29,14 +40,14 @@ def analyze_and_repair_topology(topology_file: str, repair_if_broken: bool = Tru
     """
     try:
         # First, validate the topology
-        validation_result = topology_repair_agent.tools[0](topology_file)  # validate_topology
-        
+        validation_result = validate_topology(topology_file)
+
         if validation_result['status'] != 'success':
             return validation_result
-        
+
         # If topology is invalid and repair is requested, repair it
         if not validation_result['is_valid'] and repair_if_broken:
-            repair_result = topology_repair_agent.tools[1](topology_file, output_file)  # repair_topology_file
+            repair_result = repair_topology_file(topology_file, output_file)
             
             if repair_result['status'] != 'success':
                 return repair_result
@@ -78,16 +89,16 @@ def analyze_resources_and_optimize(topology_file: str, region: str = 'us-east4',
     """
     try:
         # Analyze topology resources
-        resource_analysis = resource_optimization_agent.tools[0](topology_file)  # analyze_topology_resources
-        
+        resource_analysis = analyze_topology_resources(topology_file)
+
         if resource_analysis['status'] != 'success':
             return resource_analysis
-        
+
         # Optimize deployment based on resource requirements
         total_cpu = resource_analysis['total_cpu']
         total_memory = resource_analysis['total_memory']
-        
-        optimization_result = resource_optimization_agent.tools[1](  # optimize_deployment_configuration
+
+        optimization_result = optimize_deployment_configuration(
             total_cpu, total_memory, region, max_vms, prefer_spot
         )
         
@@ -153,8 +164,8 @@ def complete_topology_analysis(topology_file: str, region: str = 'us-east4',
         # Step 3: Get cost comparison
         total_cpu = optimization_result['resource_analysis']['total_cpu']
         total_memory = optimization_result['resource_analysis']['total_memory']
-        
-        cost_comparison = resource_optimization_agent.tools[3](total_cpu, total_memory, region)  # compare_deployment_options
+
+        cost_comparison = compare_deployment_options(total_cpu, total_memory, region)
         
         return {
             "status": "success",
@@ -205,19 +216,19 @@ def get_deployment_recommendations(topology_file: str, region: str = 'us-east4',
         
         # Get different deployment options
         options = {}
-        
+
         # Option 1: On-demand standard
-        ondemand_result = resource_optimization_agent.tools[1](total_cpu, total_memory, region, 10, False)
+        ondemand_result = optimize_deployment_configuration(total_cpu, total_memory, region, 10, False)
         if ondemand_result['status'] == 'success':
             options['on_demand_standard'] = ondemand_result['deployment_plan']
-        
+
         # Option 2: Spot standard
-        spot_result = resource_optimization_agent.tools[1](total_cpu, total_memory, region, 10, True)
+        spot_result = optimize_deployment_configuration(total_cpu, total_memory, region, 10, True)
         if spot_result['status'] == 'success':
             options['spot_standard'] = spot_result['deployment_plan']
-        
+
         # Option 3: High availability (multiple smaller VMs)
-        ha_result = resource_optimization_agent.tools[1](total_cpu, total_memory, region, 5, False)
+        ha_result = optimize_deployment_configuration(total_cpu, total_memory, region, 5, False)
         if ha_result['status'] == 'success':
             options['high_availability'] = ha_result['deployment_plan']
         
@@ -228,17 +239,32 @@ def get_deployment_recommendations(topology_file: str, region: str = 'us-east4',
                 if option_data['total_monthly_cost'] <= budget_constraint:
                     filtered_options[option_name] = option_data
             options = filtered_options
-        
+
+        # Check if we have any options available
+        if not options:
+            return {
+                "status": "error",
+                "error_message": f"No deployment options available within budget constraint of ${budget_constraint}/month"
+            }
+
         # Select best option based on priority
         best_option = None
         if performance_priority == 'cost':
             best_option = min(options.items(), key=lambda x: x[1]['total_monthly_cost'])
         elif performance_priority == 'performance':
             # Prefer on-demand standard for performance
-            best_option = ('on_demand_standard', options.get('on_demand_standard', list(options.values())[0]))
+            if 'on_demand_standard' in options:
+                best_option = ('on_demand_standard', options['on_demand_standard'])
+            else:
+                # Fallback to cheapest option if on-demand not available
+                best_option = min(options.items(), key=lambda x: x[1]['total_monthly_cost'])
         else:  # balanced
             # Prefer spot standard for balanced approach
-            best_option = ('spot_standard', options.get('spot_standard', list(options.values())[0]))
+            if 'spot_standard' in options:
+                best_option = ('spot_standard', options['spot_standard'])
+            else:
+                # Fallback to cheapest option
+                best_option = min(options.items(), key=lambda x: x[1]['total_monthly_cost'])
         
         return {
             "status": "success",
@@ -285,50 +311,60 @@ def generate_deployment_commands(topology_file: str, region: str = 'us-east4',
             deployment_option = recommendations['recommendations']['recommended_option']['name']
         
         deployment_config = recommendations['recommendations']['all_options'][deployment_option]
-        
+
+        # Determine if this is a spot instance deployment
+        is_spot = 'spot' in deployment_option.lower()
+
         # Generate gcloud commands
         commands = []
         instructions = []
-        
+
         # Set project and region
         commands.append(f"# Set your Google Cloud project and region")
         commands.append(f"export PROJECT_ID=your-project-id")
         commands.append(f"export REGION={region}")
         commands.append(f"gcloud config set project $PROJECT_ID")
         commands.append("")
-        
+
         # Create VMs
+        vm_counter = 0
         for vm_config in deployment_config['vm_configurations']:
             machine_type = vm_config['machine_type']
             count = vm_config['count']
-            
+
             if vm_config['is_custom']:
-                # Custom machine type
+                # Custom machine type - memory must be in MB
                 cpu_cores = vm_config['cpu_cores']
-                memory_gb = vm_config['memory_gb']
-                
+                memory_mb = vm_config['memory_gb'] * 1024
+
                 for i in range(count):
-                    vm_name = f"containerlab-vm-{i+1}"
-                    commands.append(f"# Create custom VM {i+1}/{count}")
+                    vm_counter += 1
+                    vm_name = f"containerlab-vm-{vm_counter}"
+                    commands.append(f"# Create custom VM {vm_counter} (CPU: {cpu_cores}, Memory: {vm_config['memory_gb']}GB)")
                     commands.append(f"gcloud compute instances create {vm_name} \\")
                     commands.append(f"    --zone=$REGION-a \\")
-                    commands.append(f"    --machine-type=custom-{cpu_cores}-{memory_gb} \\")
+                    commands.append(f"    --machine-type=custom-{cpu_cores}-{memory_mb} \\")
                     commands.append(f"    --image-family=ubuntu-2004-lts \\")
                     commands.append(f"    --image-project=ubuntu-os-cloud \\")
                     commands.append(f"    --boot-disk-size=20GB \\")
+                    if is_spot:
+                        commands.append(f"    --preemptible \\")
                     commands.append(f"    --tags=containerlab")
                     commands.append("")
             else:
                 # Standard machine type
                 for i in range(count):
-                    vm_name = f"containerlab-vm-{i+1}"
-                    commands.append(f"# Create standard VM {i+1}/{count}")
+                    vm_counter += 1
+                    vm_name = f"containerlab-vm-{vm_counter}"
+                    commands.append(f"# Create standard VM {vm_counter} ({machine_type})")
                     commands.append(f"gcloud compute instances create {vm_name} \\")
                     commands.append(f"    --zone=$REGION-a \\")
                     commands.append(f"    --machine-type={machine_type} \\")
                     commands.append(f"    --image-family=ubuntu-2004-lts \\")
                     commands.append(f"    --image-project=ubuntu-os-cloud \\")
                     commands.append(f"    --boot-disk-size=20GB \\")
+                    if is_spot:
+                        commands.append(f"    --preemptible \\")
                     commands.append(f"    --tags=containerlab")
                     commands.append("")
         
@@ -379,10 +415,25 @@ def generate_deployment_commands(topology_file: str, region: str = 'us-east4',
         }
 
 
+# Validate required environment variables
+def _get_openai_base_url() -> str:
+    """Get and validate OPENAI_BASE_URL environment variable."""
+    base_url = os.getenv("OPENAI_BASE_URL")
+    if not base_url:
+        raise ValueError(
+            "OPENAI_BASE_URL environment variable is not set. "
+            "Please configure it in multi_agent_system/.env file."
+        )
+    return base_url
+
+
 # ADK Agent for Main Coordinator
 coordinator_agent = Agent(
     name="containerlab_gcp_coordinator",
-    model="gemini-2.0-flash",
+    model=LiteLlm(
+        model="openai/Llama-3.1-8B-Instruct",
+        api_base=_get_openai_base_url()
+    ),
     description=(
         "Main coordinator agent for ContainerLab to Google Cloud Engine deployment. "
         "This agent orchestrates the multi-agent system, coordinating between the "

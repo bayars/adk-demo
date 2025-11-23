@@ -5,11 +5,13 @@ Part of the multi-agent system for ContainerLab to GCP deployment
 """
 
 import yaml
+import os
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass, field
 
 # Google ADK imports
 from google.adk.agents import Agent
+from google.adk.llms import LiteLlm
 
 
 @dataclass
@@ -56,23 +58,109 @@ class ContainerLabResourceParser:
     def __init__(self):
         # Base resource mapping for different node kinds (fallback)
         self.NODE_RESOURCE_MAPPING = {
+            # Nokia SR Linux - Different chassis types
             'nokia_srlinux': {
                 'default': {'cpu': 2, 'memory': 4},
+                'ixr-d1': {'cpu': 2, 'memory': 4},
+                'ixr-d2': {'cpu': 2, 'memory': 6},
+                'ixr-d2l': {'cpu': 2, 'memory': 6},
+                'ixr-d3': {'cpu': 4, 'memory': 8},
+                'ixr-d3l': {'cpu': 4, 'memory': 8},
+                'ixrd2': {'cpu': 2, 'memory': 6},
+                'ixrd2l': {'cpu': 2, 'memory': 6},
                 'ixrd3': {'cpu': 4, 'memory': 8},
+                'ixrd3l': {'cpu': 4, 'memory': 8},
+                'ixr-h2': {'cpu': 4, 'memory': 12},
+                'ixr-h3': {'cpu': 6, 'memory': 16},
+                'ixr-h4': {'cpu': 8, 'memory': 20},
             },
+            'nokia_srl': {
+                'default': {'cpu': 2, 'memory': 4},
+                'ixr-d2': {'cpu': 2, 'memory': 6},
+                'ixr-d3': {'cpu': 4, 'memory': 8},
+            },
+            # Nokia SROS - Different chassis types
             'nokia_sros': {
                 'default': {'cpu': 4, 'memory': 8},
+                'sr-1': {'cpu': 2, 'memory': 4},
+                'sr-1e': {'cpu': 2, 'memory': 4},
+                'sr-1s': {'cpu': 2, 'memory': 4},
+                'sr-2': {'cpu': 4, 'memory': 8},
+                'sr-2s': {'cpu': 4, 'memory': 8},
+                'sr-3': {'cpu': 6, 'memory': 12},
+                'sr-3e': {'cpu': 6, 'memory': 12},
+                'sr-4': {'cpu': 8, 'memory': 16},
+                'sr-5': {'cpu': 10, 'memory': 20},
+                'sr-7': {'cpu': 12, 'memory': 24},
+                'sr-12': {'cpu': 16, 'memory': 32},
+                'sr-14': {'cpu': 18, 'memory': 36},
+                'ixr-6': {'cpu': 4, 'memory': 8},
+                'ixr-6e': {'cpu': 4, 'memory': 8},
+                'ixr-e': {'cpu': 4, 'memory': 8},
+                'ixr-r6': {'cpu': 4, 'memory': 8},
+                '7750-sr': {'cpu': 8, 'memory': 16},
+                '7250-ixr': {'cpu': 4, 'memory': 8},
+                '7210-sas': {'cpu': 2, 'memory': 4},
                 'cpm': {'cpu': 2, 'memory': 4},
                 'linecard': {'cpu': 1, 'memory': 2},
             },
-            'linux': {'cpu': 1, 'memory': 2},
+            # Cisco platforms
             'cisco_iosxe': {'cpu': 2, 'memory': 4},
             'cisco_iosxr': {'cpu': 2, 'memory': 4},
+            'cisco_xrd': {'cpu': 2, 'memory': 4},
+            'cisco_xrv9k': {'cpu': 4, 'memory': 16},
+            'cisco_n9kv': {'cpu': 2, 'memory': 8},
+            'cisco_csr1000v': {'cpu': 2, 'memory': 4},
+            'cisco_cat8000v': {'cpu': 2, 'memory': 4},
+            'cisco_ftdv': {'cpu': 4, 'memory': 8},
+            # Juniper platforms
             'juniper_vmx': {'cpu': 2, 'memory': 4},
+            'juniper_vjunosevolved': {'cpu': 2, 'memory': 4},
+            'juniper_vjunosrouter': {'cpu': 2, 'memory': 4},
+            'juniper_vjunosswitch': {'cpu': 2, 'memory': 4},
+            'juniper_vqfx': {'cpu': 2, 'memory': 4},
+            'juniper_vsrx': {'cpu': 4, 'memory': 8},
+            'juniper_crpd': {'cpu': 1, 'memory': 2},
+            # Arista
             'arista_ceos': {'cpu': 2, 'memory': 4},
+            'arista_veos': {'cpu': 2, 'memory': 4},
+            # SONiC
             'sonic': {'cpu': 2, 'memory': 4},
+            'sonic-vs': {'cpu': 2, 'memory': 4},
+            'dell_sonic': {'cpu': 2, 'memory': 4},
+            # Linux and containers
+            'linux': {'cpu': 1, 'memory': 2},
+            'alpine': {'cpu': 1, 'memory': 1},
+            'ubuntu': {'cpu': 1, 'memory': 2},
+            'centos': {'cpu': 1, 'memory': 2},
+            # Routing daemons
             'frr': {'cpu': 1, 'memory': 2},
             'quagga': {'cpu': 1, 'memory': 2},
+            # Network functions
+            'ovs': {'cpu': 1, 'memory': 1},
+            'bridge': {'cpu': 1, 'memory': 1},
+            # Fortinet
+            'fortinet_fortigate': {'cpu': 2, 'memory': 4},
+            # Palo Alto
+            'paloalto_panos': {'cpu': 2, 'memory': 4},
+            # BSD
+            'freebsd': {'cpu': 1, 'memory': 2},
+            'openbsd': {'cpu': 1, 'memory': 2},
+            # Kubernetes
+            'kind': {'cpu': 2, 'memory': 4},
+            'k8s': {'cpu': 2, 'memory': 4},
+            'kubernetes': {'cpu': 2, 'memory': 4},
+            # Traffic generators
+            'keysight_ixia-c-one': {'cpu': 2, 'memory': 4},
+            'ixia-c-one': {'cpu': 2, 'memory': 4},
+            # Generic
+            'generic_vm': {'cpu': 2, 'memory': 4},
+            'ext-container': {'cpu': 1, 'memory': 2},
+            # Cumulus
+            'cumulus_cvx': {'cpu': 2, 'memory': 4},
+            # Others
+            'checkpoint_cloudguard': {'cpu': 2, 'memory': 4},
+            'ipinfusion_ocnos': {'cpu': 2, 'memory': 4},
         }
         
         # SROS lifecycle component mappings
@@ -94,17 +182,44 @@ class ContainerLabResourceParser:
                 topology_data = yaml.safe_load(file)
         except Exception as e:
             raise ValueError(f"Failed to parse topology file {file_path}: {e}")
-        
+
         topology = topology_data.get('topology', {})
         if 'nodes' not in topology:
             raise ValueError("Invalid ContainerLab topology file: missing 'nodes' section")
-        
+
+        # Extract defaults and kinds for configuration inheritance
+        defaults = topology.get('defaults', {})
+        kinds = topology.get('kinds', {})
+
         nodes = []
         for node_name, node_config in topology['nodes'].items():
-            node_req = self._extract_node_requirements(node_name, node_config)
+            # Merge configurations: defaults -> kinds -> node (node takes precedence)
+            merged_config = self._merge_node_config(node_config or {}, defaults, kinds)
+            node_req = self._extract_node_requirements(node_name, merged_config)
             nodes.append(node_req)
-        
+
         return nodes, topology_data
+
+    def _merge_node_config(self, node_config: Dict, defaults: Dict, kinds: Dict) -> Dict:
+        """Merge node configuration with defaults and kind-specific settings"""
+        merged = {}
+
+        # Start with defaults
+        merged.update(defaults)
+
+        # Get node kind and apply kind-specific defaults
+        node_kind = node_config.get('kind', defaults.get('kind'))
+        if node_kind and node_kind in kinds:
+            kind_defaults = kinds[node_kind]
+            # Update but don't override node-level settings
+            for key, value in kind_defaults.items():
+                if key not in node_config:
+                    merged[key] = value
+
+        # Finally apply node-specific config (highest priority)
+        merged.update(node_config)
+
+        return merged
     
     def _extract_node_requirements(self, name: str, config: Dict) -> NodeResourceRequirements:
         """Extract resource requirements for a single node"""
@@ -637,7 +752,10 @@ def compare_deployment_options(total_cpu: int, total_memory: int, region: str = 
 # ADK Agent for Resource Optimization
 resource_optimization_agent = Agent(
     name="resource_optimization_agent",
-    model="gemini-2.0-flash",
+    model=LiteLlm(
+        model="openai/Llama-3.1-8B-Instruct",
+        api_base=os.getenv("OPENAI_BASE_URL")
+    ),
     description=(
         "Specialized agent for analyzing ContainerLab resource requirements and "
         "providing optimized Google Cloud Engine deployment recommendations. "

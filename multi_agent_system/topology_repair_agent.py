@@ -5,12 +5,14 @@ Part of the multi-agent system for ContainerLab to GCP deployment
 """
 
 import yaml
+import os
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 
 # Google ADK imports
 from google.adk.agents import Agent
+from google.adk.llms import LiteLlm
 
 
 @dataclass
@@ -39,9 +41,38 @@ class ContainerLabTopologyValidator(TopologyValidator):
         self.required_sections = ['topology']
         self.required_topology_sections = ['nodes']
         self.valid_node_kinds = {
-            'nokia_srlinux', 'nokia_sros', 'linux', 'cisco_iosxe', 
-            'cisco_iosxr', 'juniper_vmx', 'arista_ceos', 'sonic', 
-            'frr', 'quagga', 'ovs', 'bridge'
+            # Nokia
+            'nokia_srlinux', 'nokia_sros', 'nokia_srl',
+            # Cisco
+            'cisco_iosxe', 'cisco_iosxr', 'cisco_xrd', 'cisco_xrv9k', 'cisco_n9kv',
+            'cisco_csr1000v', 'cisco_cat8000v', 'cisco_ftdv',
+            # Juniper
+            'juniper_vmx', 'juniper_vjunosevolved', 'juniper_vjunosrouter',
+            'juniper_vjunosswitch', 'juniper_vqfx', 'juniper_vsrx', 'juniper_crpd',
+            # Arista
+            'arista_ceos', 'arista_veos',
+            # SONiC
+            'sonic-vs', 'sonic',
+            # Linux/containers
+            'linux', 'alpine', 'ubuntu', 'centos',
+            # Routing
+            'frr', 'quagga',
+            # Generic
+            'ovs', 'bridge', 'ext-container', 'generic_vm',
+            # Keysight
+            'keysight_ixia-c-one', 'ixia-c-one',
+            # Fortinet
+            'fortinet_fortigate',
+            # Palo Alto
+            'paloalto_panos',
+            # FreeBSD/OpenBSD
+            'freebsd', 'openbsd',
+            # Kubernetes
+            'kubernetes', 'k8s', 'kind',
+            # Checkpoint
+            'checkpoint_cloudguard',
+            # Rare/specialized
+            'ipinfusion_ocnos', 'dell_sonic', 'cumulus_cvx'
         }
     
     def validate(self, topology_data: Dict) -> TopologyValidationResult:
@@ -370,7 +401,10 @@ def analyze_topology_structure(topology_file: str) -> dict:
 # ADK Agent for Topology Repair
 topology_repair_agent = Agent(
     name="topology_repair_agent",
-    model="gemini-2.0-flash",
+    model=LiteLlm(
+        model="openai/Llama-3.1-8B-Instruct",
+        api_base=os.getenv("OPENAI_BASE_URL")
+    ),
     description=(
         "Specialized agent for validating and repairing ContainerLab topology files. "
         "This agent focuses exclusively on topology structure validation, error detection, "

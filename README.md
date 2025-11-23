@@ -2,9 +2,10 @@
 
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://python.org)
 [![Google ADK](https://img.shields.io/badge/Google%20ADK-Latest-green.svg)](https://google.github.io/adk-docs/)
+[![LLM](https://img.shields.io/badge/LLM-Llama--3.1--8B-orange.svg)](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A sophisticated multi-agent system built with Google Agent Development Kit (ADK) for analyzing ContainerLab topologies and providing optimized Google Cloud Engine deployment recommendations.
+A sophisticated multi-agent system built with Google Agent Development Kit (ADK) using Llama-3.1-8B-Instruct for analyzing ContainerLab topologies and providing optimized Google Cloud Engine deployment recommendations.
 
 ## 🎯 Overview
 
@@ -18,8 +19,12 @@ This project implements a **multi-agent system** that separates concerns into sp
 
 ### Prerequisites
 ```bash
-pip install google-adk pyyaml
+pip install google-adk pyyaml litellm
 ```
+
+**Note:** This system uses Llama-3.1-8B-Instruct via LiteLLM with OpenAI-compatible API. You'll need:
+- An OpenAI API key (or compatible provider key)
+- API base URL for your LLM provider endpoint
 
 ### Setup
 1. **Clone the repository**:
@@ -28,12 +33,18 @@ pip install google-adk pyyaml
    cd adk_demo
    ```
 
-2. **Set up API Key**:
-   Edit `multi_agent_system/.env`:
+2. **Set up API Configuration**:
+   Edit `multi_agent_system/.env` with your credentials:
+   ```bash
+   # OpenAI-Compatible API Configuration
+   OPENAI_API_KEY=your_openai_api_key_here
+   OPENAI_BASE_URL=your_openai_base_url_here
    ```
-   GOOGLE_GENAI_USE_VERTEXAI=FALSE
-   GOOGLE_API_KEY=your_actual_api_key_here
-   ```
+
+   **Example configurations:**
+   - For OpenAI: `OPENAI_BASE_URL=https://api.openai.com/v1`
+   - For local LLM: `OPENAI_BASE_URL=http://localhost:8000/v1`
+   - For custom endpoint: Use your provider's base URL
 
 3. **Run the Multi-Agent System**:
    ```bash
@@ -195,7 +206,7 @@ adk_demo/
 ### Development Setup
 1. **Clone the repository**
 2. **Install dependencies**: `pip install -r requirements.txt`
-3. **Configure API key** in `multi_agent_system/.env`
+3. **Configure OpenAI API credentials** in `multi_agent_system/.env`
 4. **Run tests**: `python3 test_multi_agent.py`
 5. **Start development**: `adk web --host=0.0.0.0 agents/`
 

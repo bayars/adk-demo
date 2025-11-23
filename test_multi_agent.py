@@ -357,7 +357,7 @@ def main():
     if success:
         print("\n✅ Multi-Agent ContainerLab System is ready for deployment!")
         print("\nTo use the multi-agent system:")
-        print("1. Set up your Google API key in multi_agent_system/.env")
+        print("1. Set up your OpenAI API credentials in multi_agent_system/.env")
         print("2. Run: adk web (for dev UI)")
         print("3. Select 'containerlab_gcp_coordinator' from the dropdown")
         print("4. Chat with the coordinator agent for complete analysis")
